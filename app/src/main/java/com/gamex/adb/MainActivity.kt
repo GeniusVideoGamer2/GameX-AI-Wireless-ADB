@@ -1,6 +1,8 @@
 package com.gamex.adb
 
 import android.app.Activity
+import android.app.PendingIntent
+import android.os.Build
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.content.Context
@@ -53,6 +55,7 @@ class MainActivity : Activity() {
         fun button(label: String, action: () -> Unit) {
             root.addView(Button(this).apply { text = label; setOnClickListener { action() } })
         }
+        button("ADB bağlantısını test et") { runTermux("adb devices -l") }
         button("Termux komut izni iste") {
             requestPermissions(arrayOf("com.termux.permission.RUN_COMMAND"), 101)
         }
@@ -324,23 +327,32 @@ class MainActivity : Activity() {
 
     private fun validPort(p: String): Boolean = (p.toIntOrNull() ?: 0) in 1..65535
 
+    private var requestId = 1000
+
     private fun runTermux(command: String) {
         try {
             if (checkSelfPermission("com.termux.permission.RUN_COMMAND") != PackageManager.PERMISSION_GRANTED) {
-                status.text = "Önce Termux komut iznini ver"
+                status.text = "Termux komut izni eksik. Android Ayarlar → Uygulamalar → GameX Wireless ADB → İzinler → Ek izinler bölümünü kontrol et."
                 return
             }
+            val callback = Intent(this, AdbResultReceiver::class.java).apply {
+                putExtra("request_id", requestId)
+            }
+            val flags = PendingIntent.FLAG_ONE_SHOT or
+                (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
+            val resultIntent = PendingIntent.getBroadcast(this, requestId++, callback, flags)
             val intent = Intent("com.termux.RUN_COMMAND").apply {
                 component = ComponentName("com.termux", "com.termux.app.RunCommandService")
                 putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
                 putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-lc", command))
                 putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home")
-                putExtra("com.termux.RUN_COMMAND_BACKGROUND", false)
+                putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+                putExtra("com.termux.RUN_COMMAND_PENDING_INTENT", resultIntent)
             }
             startService(intent)
-            status.text = "Komut Termux'a gönderildi. Çıktıyı Termux'ta kontrol et."
+            status.text = "ADB komutu çalıştırılıyor. Termux sonucu bekleniyor..."
         } catch (e: Exception) {
-            status.text = "Termux başlatılamadı: ${e.message}"
+            status.text = "Termux bağlantı hatası: ${e.message}"
         }
     }
 }

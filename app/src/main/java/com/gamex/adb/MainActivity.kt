@@ -1,6 +1,9 @@
 package com.gamex.adb
 
 import android.app.Activity
+import android.net.nsd.NsdManager
+import android.net.nsd.NsdServiceInfo
+import android.content.Context
 import android.app.AlertDialog
 import org.json.JSONObject
 import java.net.URL
@@ -13,6 +16,8 @@ import android.os.Bundle
 import android.widget.*
 
 class MainActivity : Activity() {
+    private var discovery: NsdManager.DiscoveryListener? = null
+    private var nsd: NsdManager? = null
     private lateinit var host: EditText
     private lateinit var pairingPort: EditText
     private lateinit var code: EditText
@@ -43,12 +48,14 @@ class MainActivity : Activity() {
         listOf(host, pairingPort, code, connectPort).forEach(root::addView)
         status = TextView(this).apply { text = "Termux + android-tools gerekir." }
         root.addView(status)
+        root.addView(TextView(this).apply { text = "TV: Kablosuz hata ayıklama → Eşleme koduyla cihaz eşleştir. Ardından Wi-Fi ağında TV eşleme adresini bul düğmesine bas." })
         fun button(label: String, action: () -> Unit) {
             root.addView(Button(this).apply { text = label; setOnClickListener { action() } })
         }
         button("Termux komut izni iste") {
             requestPermissions(arrayOf("com.termux.permission.RUN_COMMAND"), 101)
         }
+        button("Wi-Fi ağında TV eşleme adresini bul") { discoverTv() }
         button("Eşleştir") {
             val h = host.text.toString().trim()
             val p = pairingPort.text.toString().trim()
@@ -186,6 +193,69 @@ class MainActivity : Activity() {
             if (command == null) status.text = "Bu istek için güvenli komut tanımlı değil."
             else onDevice(command)
         }
+    }
+
+    private fun discoverTv() {
+        status.text = "TV'de eşleme kodu ekranını açık tut. Ağda ADB eşleme servisi aranıyor..."
+        val manager = getSystemService(Context.NSD_SERVICE) as NsdManager
+        nsd = manager
+        discovery?.let { try { manager.stopServiceDiscovery(it) } catch (_: Exception) {} }
+        val listener = object : NsdManager.DiscoveryListener {
+            override fun onDiscoveryStarted(type: String) {}
+            override fun onServiceFound(service: NsdServiceInfo) {
+                if (!service.serviceType.contains("_adb-tls-pairing")) return
+                manager.resolveService(service, object : NsdManager.ResolveListener {
+                    override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {
+                        runOnUiThread { status.text = "TV bulundu ancak adres çözümlenemedi ($errorCode). Yeniden dene." }
+                    }
+                    override fun onServiceResolved(info: NsdServiceInfo) {
+                        val address = info.host?.hostAddress ?: return
+                        val port = info.port
+                        if (!validHost(address) || !validPort(port.toString())) return
+                        runOnUiThread {
+                            host.setText(address)
+                            pairingPort.setText(port.toString())
+                            status.text = "TV eşleme servisi bulundu: $address:$port. Şimdi 6 haneli kodu gir."
+                            val input = EditText(this@MainActivity).apply {
+                                inputType = android.text.InputType.TYPE_CLASS_NUMBER
+                                filters = arrayOf(android.text.InputFilter.LengthFilter(6))
+                                hint = "TV'deki 6 haneli kod"
+                            }
+                            AlertDialog.Builder(this@MainActivity)
+                                .setTitle("TV ile eşleştir")
+                                .setMessage("TV ekranındaki geçici eşleme kodunu gir.")
+                                .setView(input)
+                                .setNegativeButton("İptal", null)
+                                .setPositiveButton("Eşleştir") { _, _ ->
+                                    val value = input.text.toString().trim()
+                                    if (!value.matches(Regex("[0-9]{6}"))) status.text = "6 haneli kod gerekli."
+                                    else {
+                                        code.setText(value)
+                                        runTermux("adb pair $address:$port $value")
+                                    }
+                                }.show()
+                            discovery?.let { try { manager.stopServiceDiscovery(it) } catch (_: Exception) {} }
+                            discovery = null
+                        }
+                    }
+                })
+            }
+            override fun onServiceLost(service: NsdServiceInfo) {}
+            override fun onDiscoveryStopped(type: String) {}
+            override fun onStartDiscoveryFailed(type: String, errorCode: Int) {
+                runOnUiThread { status.text = "Ağ taraması başlatılamadı ($errorCode). IP ve portu elle girebilirsin." }
+                try { manager.stopServiceDiscovery(this) } catch (_: Exception) {}
+            }
+            override fun onStopDiscoveryFailed(type: String, errorCode: Int) {}
+        }
+        discovery = listener
+        try { manager.discoverServices("_adb-tls-pairing._tcp.", NsdManager.PROTOCOL_DNS_SD, listener) }
+        catch (e: Exception) { status.text = "Ağ tarama hatası: ${e.message}" }
+    }
+
+    override fun onDestroy() {
+        discovery?.let { try { nsd?.stopServiceDiscovery(it) } catch (_: Exception) {} }
+        super.onDestroy()
     }
 
     private fun onDevice(action: String) {

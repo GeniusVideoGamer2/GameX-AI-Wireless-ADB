@@ -17,6 +17,7 @@ import android.widget.*
 
 class MainActivity : Activity() {
     private var discovery: NsdManager.DiscoveryListener? = null
+    private var connectDiscovery: NsdManager.DiscoveryListener? = null
     private var nsd: NsdManager? = null
     private lateinit var host: EditText
     private lateinit var pairingPort: EditText
@@ -56,6 +57,7 @@ class MainActivity : Activity() {
             requestPermissions(arrayOf("com.termux.permission.RUN_COMMAND"), 101)
         }
         button("Wi-Fi ağında TV eşleme adresini bul") { discoverTv() }
+        button("TV otomatik bağlantıyı başlat") { discoverConnect() }
         button("Eşleştir") {
             val h = host.text.toString().trim()
             val p = pairingPort.text.toString().trim()
@@ -82,6 +84,12 @@ class MainActivity : Activity() {
         }
         button("Yüklü uygulamaları listele") {
             onDevice("shell pm list packages -f")
+        }
+        button("Root durumunu kontrol et") {
+            onDevice("shell id; adb -s DEVICE shell command -v su; adb -s DEVICE shell getprop ro.debuggable")
+        }
+        button("Bootloader durumunu kontrol et (salt okunur)") {
+            onDevice("shell getprop ro.boot.flash.locked; adb -s DEVICE shell getprop ro.boot.vbmeta.device_state; adb -s DEVICE shell getprop ro.oem_unlock_supported; adb -s DEVICE shell getprop ro.boot.verifiedbootstate")
         }
         button("ROM uyumluluğunu kontrol et") {
             onDevice("shell getprop ro.treble.enabled; adb -s DEVICE shell getprop ro.boot.verifiedbootstate; adb -s DEVICE shell getprop ro.boot.dynamic_partitions; adb -s DEVICE shell getprop ro.product.cpu.abi")
@@ -195,6 +203,46 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun discoverConnect() {
+        status.text = "Aynı Wi-Fi ağındaki ADB bağlantı servisi aranıyor..."
+        val manager = getSystemService(Context.NSD_SERVICE) as NsdManager
+        nsd = manager
+        connectDiscovery?.let { try { manager.stopServiceDiscovery(it) } catch (_: Exception) {} }
+        val listener = object : NsdManager.DiscoveryListener {
+            override fun onDiscoveryStarted(type: String) {}
+            override fun onServiceFound(service: NsdServiceInfo) {
+                if (!service.serviceType.contains("_adb-tls-connect")) return
+                manager.resolveService(service, object : NsdManager.ResolveListener {
+                    override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {
+                        runOnUiThread { status.text = "Bağlantı adresi çözümlenemedi ($errorCode)" }
+                    }
+                    override fun onServiceResolved(info: NsdServiceInfo) {
+                        val address = info.host?.hostAddress ?: return
+                        if (!validHost(address) || !validPort(info.port.toString())) return
+                        runOnUiThread {
+                            host.setText(address)
+                            connectPort.setText(info.port.toString())
+                            status.text = "ADB cihazı bulundu: $address:${info.port}. Bağlantı deneniyor..."
+                            runTermux("adb connect $address:${info.port}")
+                            connectDiscovery?.let { try { manager.stopServiceDiscovery(it) } catch (_: Exception) {} }
+                            connectDiscovery = null
+                        }
+                    }
+                })
+            }
+            override fun onServiceLost(service: NsdServiceInfo) {}
+            override fun onDiscoveryStopped(type: String) {}
+            override fun onStartDiscoveryFailed(type: String, errorCode: Int) {
+                runOnUiThread { status.text = "ADB bağlantı araması başarısız ($errorCode)" }
+                try { manager.stopServiceDiscovery(this) } catch (_: Exception) {}
+            }
+            override fun onStopDiscoveryFailed(type: String, errorCode: Int) {}
+        }
+        connectDiscovery = listener
+        try { manager.discoverServices("_adb-tls-connect._tcp.", NsdManager.PROTOCOL_DNS_SD, listener) }
+        catch (e: Exception) { status.text = "ADB arama hatası: ${e.message}" }
+    }
+
     private fun discoverTv() {
         status.text = "TV'de eşleme kodu ekranını açık tut. Ağda ADB eşleme servisi aranıyor..."
         val manager = getSystemService(Context.NSD_SERVICE) as NsdManager
@@ -255,6 +303,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         discovery?.let { try { nsd?.stopServiceDiscovery(it) } catch (_: Exception) {} }
+        connectDiscovery?.let { try { nsd?.stopServiceDiscovery(it) } catch (_: Exception) {} }
         super.onDestroy()
     }
 

@@ -352,8 +352,13 @@ class MainActivity : Activity() {
                 putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
                 putExtra("com.termux.RUN_COMMAND_PENDING_INTENT", resultIntent)
             }
-            startService(intent)
-            status.text = "ADB komutu çalıştırılıyor. Termux sonucu bekleniyor..."
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent)
+                else startService(intent)
+                status.text = "ADB komutu Termux'a gönderildi. Son ADB sonucunu kontrol et."
+            } catch (e: Exception) {
+                status.text = "Android Termux hizmetini engelledi: ${e.message}. Termux'u aç, pil kullanımını Kısıtlanmamış yap ve tekrar dene."
+            }
         } catch (e: Exception) {
             status.text = "Termux bağlantı hatası: ${e.message}"
         }

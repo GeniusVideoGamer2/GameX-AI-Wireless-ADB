@@ -56,6 +56,9 @@ class MainActivity : Activity() {
             root.addView(Button(this).apply { text = label; setOnClickListener { action() } })
         }
         button("ADB bağlantısını test et") { runTermux("adb devices -l") }
+        button("Son ADB sonucunu göster") {
+            status.text = getSharedPreferences("adb", MODE_PRIVATE).getString("last_result", "Henüz sonuç yok. Önce ADB bağlantısını test et.")
+        }
         button("Termux komut izni iste") {
             requestPermissions(arrayOf("com.termux.permission.RUN_COMMAND"), 101)
         }

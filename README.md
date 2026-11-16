@@ -30,3 +30,11 @@ This is **not** an independent ADB client and **does not contain GPT-6**. It del
 - In-app command output and connection status
 
 **Security:** ROM flashing, bootloader unlocking and system partition changes are not implemented. Confirm target TV and back up important data before changing apps.
+
+## v0.2 experimental features
+- View package details and installed package list.
+- Disable a non-blocklisted package only after explicit confirmation; enable it again with `pm enable --user 0`. This is not a system partition modification and may fail on restricted packages.
+- Install an APK **already present on the TV** under `/sdcard/` after confirmation. This does not transfer a phone APK to the TV.
+- Optional HTTPS AI backend client: POST `{"message":"..."}` to a user-provided endpoint; display the response. No backend is hosted by this repository and no GPT-6 model is bundled. The backend owner must implement authentication, rate limiting and authorized model access. Never put an OpenAI API key in the app.
+- Standalone ADB and Android 11+ TLS pairing without Termux are **not implemented**. The existing Termux bridge is still required.
+- Commands are sent to Termux; their success and device effects are not verified in-app. Features require testing on the target TV.

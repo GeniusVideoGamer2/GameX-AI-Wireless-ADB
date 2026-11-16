@@ -2,6 +2,10 @@ package com.gamex.adb
 
 import android.app.Activity
 import android.app.AlertDialog
+import org.json.JSONObject
+import java.net.URL
+import javax.net.ssl.HttpsURLConnection
+import kotlin.concurrent.thread
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -128,6 +132,42 @@ class MainActivity : Activity() {
                 .setNegativeButton("Vazgeç", null)
                 .setPositiveButton("Yükle") { _, _ -> onDevice("shell pm install -r $p") }
                 .show()
+        }
+        root.addView(TextView(this).apply {
+            text = "AI sunucu bağlantısı (HTTPS, sunucu kurulumu gerekir)"
+            textSize = 18f
+        })
+        val backend = field("https://sunucunuz.example/api/assistant")
+        val prompt = field("AI'ya sor: TV sistemini nasıl analiz ederim?")
+        root.addView(backend)
+        root.addView(prompt)
+        button("AI sunucusuna sor") {
+            val endpoint = backend.text.toString().trim()
+            val question = prompt.text.toString().trim()
+            if (!endpoint.startsWith("https://") || question.isBlank()) {
+                status.text = "HTTPS adresi ve soru gerekli"
+            } else {
+                status.text = "AI sunucusuna bağlanılıyor..."
+                thread {
+                    try {
+                        val connection = URL(endpoint).openConnection() as HttpsURLConnection
+                        connection.requestMethod = "POST"
+                        connection.connectTimeout = 10000
+                        connection.readTimeout = 20000
+                        connection.doOutput = true
+                        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                        val payload = JSONObject().put("message", question).toString()
+                        connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+                        val result = if (connection.responseCode in 200..299) {
+                            connection.inputStream.bufferedReader().use { it.readText() }
+                        } else "HTTP hata: ${connection.responseCode}"
+                        connection.disconnect()
+                        runOnUiThread { status.text = result.take(2000) }
+                    } catch (e: Exception) {
+                        runOnUiThread { status.text = "AI bağlantı hatası: ${e.message}" }
+                    }
+                }
+            }
         }
         root.addView(TextView(this).apply {
             text = "AI komut yardımcısı (çevrimdışı; GPT-6 değil)"

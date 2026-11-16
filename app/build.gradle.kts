@@ -13,7 +13,7 @@ android {
         applicationId = "com.gamex.adb"
         minSdk = 26
         targetSdk = 28
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = 2
+        versionName = "0.2"
     }
 }

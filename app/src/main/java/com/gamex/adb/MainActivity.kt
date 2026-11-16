@@ -1,6 +1,7 @@
 package com.gamex.adb
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -85,6 +86,48 @@ class MainActivity : Activity() {
         }
         button("TV ses azalt") {
             onDevice("shell input keyevent KEYCODE_VOLUME_DOWN")
+        }
+        root.addView(TextView(this).apply { text = "APK ve uygulama yöneticisi"; textSize = 18f })
+        val pkg = field("Paket adı: örn. com.example.app")
+        root.addView(pkg)
+        fun safePackage(): String? {
+            val value = pkg.text.toString().trim()
+            return value.takeIf { it.matches(Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")) }
+        }
+        button("Uygulama ayrıntılarını göster") {
+            val p = safePackage()
+            if (p == null) status.text = "Geçerli paket adı gir"
+            else onDevice("shell dumpsys package $p")
+        }
+        button("Uygulamayı devre dışı bırak") {
+            val p = safePackage()
+            if (p == null) status.text = "Geçerli paket adı gir"
+            else if (p in setOf("android", "com.android.systemui", "com.android.settings", "com.android.shell")) {
+                status.text = "Kritik sistem paketi korunuyor."
+            } else AlertDialog.Builder(this)
+                .setTitle("Uygulamayı devre dışı bırak?")
+                .setMessage("$p devre dışı kalacak. TV'nin açılış ekranı veya kumanda işlevleri etkilenebilir. Önce paket işlevini doğrula.")
+                .setNegativeButton("Vazgeç", null)
+                .setPositiveButton("Onayla") { _, _ -> onDevice("shell pm disable-user --user 0 $p") }
+                .show()
+        }
+        button("Uygulamayı yeniden etkinleştir") {
+            val p = safePackage()
+            if (p == null) status.text = "Geçerli paket adı gir"
+            else onDevice("shell pm enable --user 0 $p")
+        }
+        val apk = field("TV üzerindeki APK yolu: /sdcard/Download/app.apk")
+        root.addView(apk)
+        button("TV'deki APK dosyasını yükle") {
+            val p = apk.text.toString().trim()
+            if (!p.matches(Regex("/sdcard/[a-zA-Z0-9_./-]+\\.apk")) || p.contains("..")) {
+                status.text = "Yalnızca /sdcard/ altındaki .apk dosyaları desteklenir."
+            } else AlertDialog.Builder(this)
+                .setTitle("APK kurulumunu onayla")
+                .setMessage("Bu işlem TV üzerinde $p dosyasını yüklemeyi dener. Kaynağına güvendiğin APK'ları kullan.")
+                .setNegativeButton("Vazgeç", null)
+                .setPositiveButton("Yükle") { _, _ -> onDevice("shell pm install -r $p") }
+                .show()
         }
         root.addView(TextView(this).apply {
             text = "AI komut yardımcısı (çevrimdışı; GPT-6 değil)"

@@ -14,7 +14,7 @@ class AdbResultReceiver : BroadcastReceiver() {
         val exit = result?.getInt("exitCode", -1) ?: -1
         val output = listOf(stdout, stderr, error).filter { it.isNotBlank() }.joinToString("\n")
         val display = if (output.isNotBlank()) output.take(1600) else "ADB sonucu alınamadı (çıkış kodu: $exit)"
-        context.getSharedPreferences("adb", Context.MODE_PRIVATE).edit().putString("last_result", display).apply()
+        context.getSharedPreferences("adb", Context.MODE_PRIVATE).edit().putString("last_result", output.take(150000)).apply()
         context.sendBroadcast(Intent("com.gamex.adb.RESULT_UPDATED").setPackage(context.packageName))
         Toast.makeText(context, if (exit == 0) "ADB komutu tamamlandı" else "ADB hata: $exit", Toast.LENGTH_SHORT).show()
     }

@@ -1,6 +1,8 @@
 package com.gamex.adb
 
 import android.app.Activity
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import android.app.PendingIntent
 import android.os.Build
 import android.net.nsd.NsdManager
@@ -87,6 +89,18 @@ class MainActivity : Activity() {
                 val device = "$h:$p"
                 runTermux("adb -s $device shell getprop ro.product.model; adb -s $device shell getprop ro.build.version.release; adb -s $device shell getprop ro.product.cpu.abi; adb -s $device shell getprop ro.treble.enabled")
             }
+        }
+        button("TV sistem uygulamalarını tara") {
+            onDevice("shell pm list packages -s -f")
+        }
+        button("Sistem uygulama raporunu ZIP olarak kaydet") {
+            val data = getSharedPreferences("adb", MODE_PRIVATE).getString("last_result", "").orEmpty()
+            if (!data.contains("package:")) status.text = "Önce TV sistem uygulamalarını tara; sonra sonucu kaydet."
+            else startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "application/zip"
+                putExtra(Intent.EXTRA_TITLE, "GameX-TV-System-Report.zip")
+            }, 220)
         }
         button("Yüklü uygulamaları listele") {
             onDevice("shell pm list packages -f")
@@ -329,6 +343,28 @@ class MainActivity : Activity() {
             h.split('.').all { (it.toIntOrNull() ?: -1) in 0..255 }
 
     private fun validPort(p: String): Boolean = (p.toIntOrNull() ?: 0) in 1..65535
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != 220 || resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        val report = getSharedPreferences("adb", MODE_PRIVATE).getString("last_result", "").orEmpty()
+        try {
+            contentResolver.openOutputStream(uri)?.use { stream ->
+                ZipOutputStream(stream).use { zip ->
+                    zip.putNextEntry(ZipEntry("system-packages.txt"))
+                    zip.write(report.toByteArray(Charsets.UTF_8))
+                    zip.closeEntry()
+                    zip.putNextEntry(ZipEntry("README.txt"))
+                    zip.write("GameX TV package inventory: names and paths only; no APK binaries or private data.".toByteArray(Charsets.UTF_8))
+                    zip.closeEntry()
+                }
+            } ?: throw IllegalStateException("Dosya açılamadı")
+            status.text = "TV sistem uygulama raporu ZIP olarak kaydedildi."
+        } catch (e: Exception) {
+            status.text = "ZIP kaydedilemedi: ${e.message}"
+        }
+    }
 
     private var requestId = 1000
 

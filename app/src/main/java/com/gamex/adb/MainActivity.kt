@@ -68,6 +68,52 @@ class MainActivity : Activity() {
                 runTermux("adb -s $device shell getprop ro.product.model; adb -s $device shell getprop ro.build.version.release; adb -s $device shell getprop ro.product.cpu.abi; adb -s $device shell getprop ro.treble.enabled")
             }
         }
+        button("Yüklü uygulamaları listele") {
+            onDevice("shell pm list packages -f")
+        }
+        button("ROM uyumluluğunu kontrol et") {
+            onDevice("shell getprop ro.treble.enabled; adb -s DEVICE shell getprop ro.boot.verifiedbootstate; adb -s DEVICE shell getprop ro.boot.dynamic_partitions; adb -s DEVICE shell getprop ro.product.cpu.abi")
+        }
+        button("TV ana ekranına dön") {
+            onDevice("shell input keyevent KEYCODE_HOME")
+        }
+        button("TV geri tuşu") {
+            onDevice("shell input keyevent KEYCODE_BACK")
+        }
+        button("TV ses artır") {
+            onDevice("shell input keyevent KEYCODE_VOLUME_UP")
+        }
+        button("TV ses azalt") {
+            onDevice("shell input keyevent KEYCODE_VOLUME_DOWN")
+        }
+        root.addView(TextView(this).apply {
+            text = "AI komut yardımcısı (çevrimdışı; GPT-6 değil)"
+            textSize = 18f
+        })
+        val request = field("Örnek: Android sürümü / uygulamaları listele / ana ekran")
+        root.addView(request)
+        button("Komut öner ve çalıştır") {
+            val command = when {
+                request.text.contains("sürüm", true) -> "shell getprop ro.build.version.release"
+                request.text.contains("uygulama", true) -> "shell pm list packages"
+                request.text.contains("işlemci", true) -> "shell getprop ro.product.cpu.abi"
+                request.text.contains("ana ekran", true) -> "shell input keyevent KEYCODE_HOME"
+                else -> null
+            }
+            if (command == null) status.text = "Bu istek için güvenli komut tanımlı değil."
+            else onDevice(command)
+        }
+    }
+
+    private fun onDevice(action: String) {
+        val h = host.text.toString().trim()
+        val p = connectPort.text.toString().trim()
+        if (!validHost(h) || !validPort(p)) {
+            status.text = "Geçerli IP ve bağlantı portu gir"
+            return
+        }
+        val device = "$h:$p"
+        runTermux("adb -s $device " + action.replace("DEVICE", device))
     }
 
     private fun validHost(h: String): Boolean =
